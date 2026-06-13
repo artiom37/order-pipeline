@@ -1,0 +1,21 @@
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Go
+bin/
+*.exe
+*.test
+coverage.out
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Env
+.env
+
+# Docker/Postgres data if locally mounted
+pgdata/
+redisdata/

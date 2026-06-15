@@ -24,9 +24,23 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+const migrationLockID int64 = 7583110001
+
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, schemaSQL)
+	conn, err := pool.Acquire(ctx)
 	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1::bigint)`, migrationLockID); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1::bigint)`, migrationLockID)
+	}()
+
+	if _, err := conn.Exec(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 	return nil

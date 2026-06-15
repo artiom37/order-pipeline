@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,11 +94,22 @@ func main() {
 			}
 			writeJSON(w, status, order)
 		case http.MethodGet:
-			list, err := repo.ListOrders(r.Context(), 100)
+			query := r.URL.Query()
+
+			page := parseIntQuery(query.Get("page"), 1)
+			pageSize := parseIntQuery(query.Get("page_size"), 25)
+
+			list, err := repo.ListOrders(r.Context(), orders.ListOrdersQuery{
+				Page:     page,
+				PageSize: pageSize,
+				Search:   strings.TrimSpace(query.Get("q")),
+				Status:   strings.TrimSpace(query.Get("status")),
+			})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+
 			writeJSON(w, http.StatusOK, list)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -164,6 +176,19 @@ func main() {
 	}
 }
 
+func parseIntQuery(value string, fallback int) int {
+	if value == "" {
+		return fallback
+	}
+
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+
+	return n
+}
+
 func proxyChaos(target string) http.HandlerFunc {
 	client := &http.Client{Timeout: 5 * time.Second}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -211,4 +236,3 @@ func cors(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-

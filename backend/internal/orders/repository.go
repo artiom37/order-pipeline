@@ -39,13 +39,28 @@ type CreateOrderInput struct {
 	RestaurantID   string `json:"restaurant_id"`
 }
 
+type ListOrdersQuery struct {
+	Page     int
+	PageSize int
+	Search   string
+	Status   string
+}
+
+type PagedOrders struct {
+	Items      []Order `json:"items"`
+	Page       int     `json:"page"`
+	PageSize   int     `json:"page_size"`
+	Total      int64   `json:"total"`
+	TotalPages int     `json:"total_pages"`
+}
+
 type Event struct {
-	ID         int64      `json:"id"`
-	OrderID    uuid.UUID  `json:"order_id"`
-	FromStatus *string    `json:"from_status,omitempty"`
-	ToStatus   string     `json:"to_status"`
-	Reason     *string    `json:"reason,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID         int64     `json:"id"`
+	OrderID    uuid.UUID `json:"order_id"`
+	FromStatus *string   `json:"from_status,omitempty"`
+	ToStatus   string    `json:"to_status"`
+	Reason     *string   `json:"reason,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Dashboard struct {
@@ -120,30 +135,96 @@ func (r *Repository) CreateOrder(ctx context.Context, in CreateOrderInput) (Orde
 	return order, true, nil
 }
 
-func (r *Repository) ListOrders(ctx context.Context, limit int) ([]Order, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
+func (r *Repository) ListOrders(ctx context.Context, q ListOrdersQuery) (PagedOrders, error) {
+	if q.Page < 1 {
+		q.Page = 1
 	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, idempotency_key, customer_name, restaurant_id, status, failure_reason, attempt_count, created_at, updated_at, delivered_at
+	if q.PageSize <= 0 {
+		q.PageSize = 25
+	}
+	if q.PageSize > 100 {
+		q.PageSize = 100
+	}
+
+	offset := (q.Page - 1) * q.PageSize
+
+	var total int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*)
 		FROM orders
-		ORDER BY created_at DESC
-		LIMIT $1
-	`, limit)
+		WHERE (
+			$1 = ''
+			OR id::text ILIKE '%' || $1 || '%'
+			OR idempotency_key ILIKE '%' || $1 || '%'
+			OR customer_name ILIKE '%' || $1 || '%'
+			OR restaurant_id ILIKE '%' || $1 || '%'
+			OR status ILIKE '%' || $1 || '%'
+			OR COALESCE(failure_reason, '') ILIKE '%' || $1 || '%'
+		)
+		AND ($2 = '' OR status = $2)
+	`, q.Search, q.Status).Scan(&total)
 	if err != nil {
-		return nil, err
+		return PagedOrders{}, err
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, idempotency_key, customer_name, restaurant_id, status,
+		       failure_reason, attempt_count, created_at, updated_at, delivered_at
+		FROM orders
+		WHERE (
+			$1 = ''
+			OR id::text ILIKE '%' || $1 || '%'
+			OR idempotency_key ILIKE '%' || $1 || '%'
+			OR customer_name ILIKE '%' || $1 || '%'
+			OR restaurant_id ILIKE '%' || $1 || '%'
+			OR status ILIKE '%' || $1 || '%'
+			OR COALESCE(failure_reason, '') ILIKE '%' || $1 || '%'
+		)
+		AND ($2 = '' OR status = $2)
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4
+	`, q.Search, q.Status, q.PageSize, offset)
+	if err != nil {
+		return PagedOrders{}, err
 	}
 	defer rows.Close()
 
-	var out []Order
+	items := make([]Order, 0, q.PageSize)
 	for rows.Next() {
 		var o Order
-		if err := rows.Scan(&o.ID, &o.IdempotencyKey, &o.CustomerName, &o.RestaurantID, &o.Status, &o.FailureReason, &o.AttemptCount, &o.CreatedAt, &o.UpdatedAt, &o.DeliveredAt); err != nil {
-			return nil, err
+		if err := rows.Scan(
+			&o.ID,
+			&o.IdempotencyKey,
+			&o.CustomerName,
+			&o.RestaurantID,
+			&o.Status,
+			&o.FailureReason,
+			&o.AttemptCount,
+			&o.CreatedAt,
+			&o.UpdatedAt,
+			&o.DeliveredAt,
+		); err != nil {
+			return PagedOrders{}, err
 		}
-		out = append(out, o)
+		items = append(items, o)
 	}
-	return out, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return PagedOrders{}, err
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = int((total + int64(q.PageSize) - 1) / int64(q.PageSize))
+	}
+
+	return PagedOrders{
+		Items:      items,
+		Page:       q.Page,
+		PageSize:   q.PageSize,
+		Total:      total,
+		TotalPages: totalPages,
+	}, nil
 }
 
 func (r *Repository) GetOrder(ctx context.Context, id uuid.UUID) (Order, error) {

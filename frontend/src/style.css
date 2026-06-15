@@ -28,3 +28,10 @@
 .btn-warn {
   border-color: rgb(251 191 36);
 }
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+  border-color: rgb(51 65 85);
+}

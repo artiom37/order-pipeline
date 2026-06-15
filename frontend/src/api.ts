@@ -9,6 +9,27 @@ export type OrderEvent = {
   created_at: string
 }
 
+export type Order = {
+  id: string
+  idempotency_key: string
+  customer_name: string
+  restaurant_id: string
+  status: string
+  failure_reason?: string
+  attempt_count: number
+  created_at: string
+  updated_at: string
+  delivered_at?: string
+}
+
+export type OrdersPage = {
+  items: Order[]
+  page: number
+  page_size: number
+  total: number
+  total_pages: number
+}
+
 export type Dashboard = {
   status_counts: Record<string, number>
   recent_events: OrderEvent[]
@@ -27,6 +48,29 @@ export type Dashboard = {
 export async function getDashboard(): Promise<Dashboard> {
   const res = await fetch(`${API_BASE}/api/dashboard`)
   if (!res.ok) throw new Error(`dashboard failed: ${res.status}`)
+  return res.json()
+}
+
+export async function getOrders(params: {
+  page: number
+  pageSize: number
+  q?: string
+  status?: string
+}): Promise<OrdersPage> {
+  const query = new URLSearchParams()
+  query.set('page', String(params.page))
+  query.set('page_size', String(params.pageSize))
+
+  if (params.q?.trim()) {
+    query.set('q', params.q.trim())
+  }
+
+  if (params.status?.trim()) {
+    query.set('status', params.status.trim())
+  }
+
+  const res = await fetch(`${API_BASE}/api/orders?${query.toString()}`)
+  if (!res.ok) throw new Error(`orders failed: ${res.status}`)
   return res.json()
 }
 

@@ -1,6 +1,6 @@
 # Order Pipeline
 
-A full-stack take-home exercise implementation for a food-delivery order pipeline.
+A full-stack implementation for a food-delivery order pipeline.
 
 The system models the lifecycle of food-delivery orders from `placed` through `delivered`, while handling bursty traffic, flaky downstream systems, retries, idempotency, worker failure, and live operational visibility.
 
@@ -456,4 +456,4 @@ Services run database migrations on startup for local demo convenience. A Postgr
 - Metrics are simple JSON-style counters. Production would expose Prometheus metrics and dashboards.
 - The simulator is intentionally simple but configurable enough for a live demo.
 - The dashboard is operationally useful but could add per-order detail pages, retry history, and latency percentiles.
-- There is no authentication or authorization because this is a local take-home demo.
+- There is no authentication or authorization because this is a local demo.
